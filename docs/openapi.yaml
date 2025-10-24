@@ -1,0 +1,9 @@
+openapi: 3.0.2
+info:
+  title: PlanLlama API
+  version: "1.0.0"
+  description: "API docs for PlanLlama backend"
+servers:
+  - url: http://localhost:5000
+paths: {}
+components: {}
