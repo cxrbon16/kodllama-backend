@@ -47,12 +47,13 @@ def health():
     }), 200
 
 
-from routes import projects_bp, employees_bp, tasks_bp, jira_sync_bp
+from routes import projects_bp, employees_bp, tasks_bp, jira_sync_bp, llm_bp
 
 app.register_blueprint(projects_bp, url_prefix='/api/projects')
 app.register_blueprint(employees_bp, url_prefix='/api/employees')
 app.register_blueprint(tasks_bp, url_prefix='/api/tasks')
 app.register_blueprint(jira_sync_bp, url_prefix='/api/jira')
+app.register_blueprint(llm_bp, url_prefix='/api/llm')
 
 # Error handlers
 @app.errorhandler(404)
