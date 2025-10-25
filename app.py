@@ -53,7 +53,7 @@ app.url_map.strict_slashes = False  # 🔹 ekle
 app.register_blueprint(projects_bp, url_prefix='/api/projects')
 app.register_blueprint(employees_bp, url_prefix='/api/employees')
 app.register_blueprint(tasks_bp, url_prefix='/api/tasks')
-app.register_blueprint(jira_sync_bp, url_prefix='/api/jira')
+app.register_blueprint(jira_sync_bp, url_prefix='/api/jira_sync')
 app.register_blueprint(llm_bp, url_prefix='/api/llm')
 
 
