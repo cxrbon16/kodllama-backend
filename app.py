@@ -16,7 +16,7 @@ app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}})
 # ...existing code...
 
 # Health check endpoint
@@ -49,11 +49,13 @@ def health():
 
 from routes import projects_bp, employees_bp, tasks_bp, jira_sync_bp, llm_bp
 
+app.url_map.strict_slashes = False  # 🔹 ekle
 app.register_blueprint(projects_bp, url_prefix='/api/projects')
 app.register_blueprint(employees_bp, url_prefix='/api/employees')
 app.register_blueprint(tasks_bp, url_prefix='/api/tasks')
 app.register_blueprint(jira_sync_bp, url_prefix='/api/jira')
 app.register_blueprint(llm_bp, url_prefix='/api/llm')
+
 
 # Error handlers
 @app.errorhandler(404)

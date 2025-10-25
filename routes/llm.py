@@ -1,7 +1,9 @@
 """LLM tabanlı yardımcı endpoint'ler."""
 from flask import Blueprint, jsonify, request
 from sqlalchemy.exc import SQLAlchemyError
-
+import os
+from datetime import datetime
+import requests
 from database import db
 from models import Project, Task
 from services.llm_service import analyze_project, auto_assign_tasks, update_task_status
@@ -64,7 +66,7 @@ def update_status_endpoint():
 
 @llm_bp.route("/auto-assign", methods=["POST"])
 def auto_assign_endpoint():
-    """Belirtilen projedeki task'ları otomatik olarak ekibe ata."""
+    """Belirtilen projedeki task'ları otomatik olarak LLM'e atatır."""
     data = request.get_json(silent=True) or {}
     project_id = data.get("project_id")
     limit = data.get("limit")
@@ -73,18 +75,94 @@ def auto_assign_endpoint():
         return jsonify({"success": False, "error": "project_id alanı zorunludur."}), 400
 
     try:
+        # Veritabanından proje ve ekibini çek
         project = Project.query.get_or_404(project_id)
-        assignments = auto_assign_tasks(project, limit=limit)
+
+        # LLM'e gönderilecek payload'u oluştur
+        payload = {
+            "json_input": {
+            "project_title": getattr(project, "title", None) or getattr(project, "project_name", None) or "Bilinmeyen Proje",
+            "index": project.id,
+            "estimated_time": getattr(project, "estimated_time", "P2D"),
+            "metadata": {
+                "description": getattr(project, "description", ""),
+                "company": getattr(project, "company", "Unknown"),
+                "department": getattr(project, "department", "Unknown"),
+                "year": datetime.now().year,
+                "languages": getattr(project, "languages", []),
+            },
+            "project_description": getattr(project, "full_description", "") or getattr(project, "description", ""),
+            "possible_solution": getattr(project, "possible_solution", ""),
+            "team": [
+                {
+                    "employee_id": getattr(m, "id", None) or getattr(m, "employee_id", None),
+                    "name": getattr(m, "name", None) or getattr(m, "full_name", None) or getattr(m, "employee_name", None) or getattr(m, "member_name", None) or "Bilinmeyen Üye",
+                    "skills": getattr(m, "skills", []),
+                    "department": getattr(m, "department", "Unknown")
+                }
+                for m in getattr(project, "team_members", [])
+            ],
+            "tasks": [
+                {
+                    "task_id": t.id,
+                    "title": t.title,
+                    "description": t.description,
+                    "required_skills": getattr(t, "required_skills", [])
+                }
+                for t in project.tasks
+            ],
+        },
+        "project_key": getattr(project, "key", "GENERIC")
+    }
+
+
+        # LLM servisine istek gönder
+        llm_url = os.getenv("LLM_ASSIGN_URL", "https://1b2370c02283.ngrok-free.app/api/generate")
+        response = requests.post(llm_url, json=payload, timeout=120)
+        response.raise_for_status()
+
+        result = response.json()
+        assignments = result.get("jira_json", {}).get("assignments") or []
+
+        # Görevleri veritabanında güncelle
+        updated_tasks = []
+        for assignment in assignments:
+            task_id = assignment.get("task_id")
+            assignee_name = assignment.get("assignee")
+            if not task_id or not assignee_name:
+                continue
+
+            task = Task.query.get(task_id)
+            if not task:
+                continue
+
+            assignee = next(
+                (m for m in project.team_members if m.name == assignee_name),
+                None
+            )
+            if assignee:
+                task.assignee_id = assignee.id
+                updated_tasks.append({
+                    "task_id": task.id,
+                    "assignee": assignee.name
+                })
+
         db.session.commit()
 
         return jsonify({
             "success": True,
-            "assignments": assignments,
+            "message": "LLM tabanlı otomatik atama tamamlandı.",
+            "assignments": updated_tasks,
             "summary": {
-                "assigned_count": len(assignments),
-                "remaining_unassigned": sum(1 for task in project.tasks if not task.assignee_id)
+                "assigned_count": len(updated_tasks),
+                "remaining_unassigned": sum(1 for t in project.tasks if not t.assignee_id)
             }
         }), 200
-    except SQLAlchemyError as exc:  # pragma: no cover - koruyucu önlem
+
+    except requests.exceptions.RequestException as e:
+        db.session.rollback()
+        return jsonify({"success": False, "error": f"LLM isteği hatası: {str(e)}"}), 500
+
+    except SQLAlchemyError as exc:  # pragma: no cover
         db.session.rollback()
         return jsonify({"success": False, "error": str(exc)}), 500
